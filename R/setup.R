@@ -17,5 +17,6 @@ renv::install(c(
   "janitor",
   "purrr",
   "tibble",
-  "dplyr"
+  "dplyr",
+  "chromote"
 ))
