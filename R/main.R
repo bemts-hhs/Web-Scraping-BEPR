@@ -16,6 +16,7 @@ library(stringr)
 library(chromote)
 library(vctrs)
 library(readr)
+library(rplaywright)
 
 ## source custom functions ----
 source("./R/scrape_utils.R")
@@ -31,6 +32,17 @@ urls <- c(
   "https://experience.arcgis.com/experience/a6cae906a7964b01af4b56120f4e0670/page/Food-Pantry-Finder?views=Near-Me"
 )
 
+# addresses to utilize to capture all foodbanks on east side of state
+# selected key spaces of the riverbend foodbank map using 90 mi radius
+riverbend_addresses <- c(
+  "Dewar, IA, USA",
+  "Marion, IA, USA",
+  "Washington, IA, USA",
+  "Rose Hill, IA, USA",
+  "Holiday Lake, USA",
+  "Waterloo, IA, USA"
+)
+
 # get the heartland food bank data ----
 heartland_foodbank <- heartland_full_scrape(
   url = urls[2],
@@ -39,3 +51,7 @@ heartland_foodbank <- heartland_full_scrape(
 
 ## write the rectangular data to .csv
 readr::write_csv(x = heartland_foodbank, file = "./out/heartland_foodbank.csv")
+
+# riverbend web scraping ----
+
+

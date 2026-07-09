@@ -1,6 +1,8 @@
 ###___________________________________________________________________________
-# Scraping utility functions
+# Scraping utility functions ----
 ###___________________________________________________________________________
+
+# HEARTLAND WEBSITE FUNCTIONS --------------------------------------------
 
 ###---------------------------------------------------------------------------
 # Function: initial_scrape_heartland()
@@ -128,34 +130,33 @@ clean_address_components <- function(df, col) {
       comma_count = str_count(short_address, pattern = ","),
       street = ifelse(
         comma_count == 1,
-        str_remove(
-          str_squish(word(short_address, 1, sep = ", ")),
-          pattern = "\\s\\w+$"
-        ),
+        stringr::word(short_address, 1, sep = ", ") |>
+          str_squish() |>
+          stringr::str_remove(pattern = "\\s\\w+$"),
         ifelse(
           comma_count == 2,
-          stringr::str_squish(
-            stringr::word(short_address, 1, sep = ", "),
-            stringr::str_squish(stringr::word(short_address, 1, 2, sep = ","))
-          )
+          stringr::word(short_address, 1, sep = ", ") |>
+            stringr::str_squish(),
+          stringr::word(short_address, 1, 2, sep = ",") |> stringr::str_squish()
         )
       ),
       city = ifelse(
         comma_count == 1,
-        word(short_address, 1, sep = ", ") |>
-          str_extract(pattern = "\\w+$") |>
-          str_squish(),
+        stringr::word(short_address, 1, sep = ", ") |>
+          stringr::str_extract(pattern = "\\w+$") |>
+          stringr::str_squish(),
         ifelse(
           comma_count == 2,
-          stringr::str_squish(stringr::word(short_address, 2, sep = ",")),
-          stringr::str_squish(stringr::word(short_address, 3, sep = ","))
+          stringr::word(short_address, 2, sep = ",") |> stringr::str_squish(),
+          stringr::word(short_address, 3, sep = ",") |> stringr::str_squish()
         )
       ),
-      state_zip = stringr::str_squish(stringr::word(
+      state_zip = stringr::word(
         short_address,
-        comma_count,
+        -1,
         sep = ", "
-      )),
+      ) |>
+        stringr::str_squish(),
 
       # Extract state (two letters after a space)
       state = str_extract(str_squish(state_zip), pattern = "[A-Z]{2}"),
@@ -164,7 +165,7 @@ clean_address_components <- function(df, col) {
       zip = stringr::str_extract(state_zip, "\\d{5}"),
       .after = {{ col }}
     ) |>
-    dplyr::select(-state_zip, -{{ col }}) |>
+    dplyr::select(-comma_count, -state_zip, -{{ col }}) |>
     dplyr::mutate(
       requirements = stringr::word(description, 1, sep = "\n"),
       details = stringr::word(description, 2, sep = "\n"),
@@ -204,3 +205,24 @@ heartland_full_scrape <- function(url, address_col) {
 
   return(out)
 }
+
+
+# RAPIDAPI FUNCTIONALITY -------------------------------------------------
+
+fa_get <- function(endpoint) {
+  httr2::request(
+    paste0("https://feedam.org", endpoint)
+  ) |>
+    httr2::req_headers("Accept" = "application/json") |>
+    httr2::req_perform() |>
+    httr2::resp_body_json() |>
+    tibble::as_tibble()
+}
+
+# Examples
+# fa_orgs      <- fa_get("/hsds/v3/organizations")
+# fa_services  <- fa_get("/hsds/v3/services")
+# fa_locations <- fa_get("/hsds/v3/locations")
+# fa_addresses <- fa_get("/hsds/v3/addresses")
+# fa_phones    <- fa_get("/hsds/v3/phones")
+# fa_schedules <- fa_get("/hsds/v3/schedules")
