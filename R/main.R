@@ -1,7 +1,10 @@
 ###___________________________________________________________________________
-# Web scraping and exporting data
+# Web scraping and exporting data ----
 ###___________________________________________________________________________
 
+# Set up environment ----
+
+## load needed packages ----
 library(httr2)
 library(rvest)
 library(xml2)
@@ -12,10 +15,12 @@ library(dplyr)
 library(stringr)
 library(chromote)
 library(vctrs)
+library(readr)
 
+## source custom functions ----
 source("./R/scrape_utils.R")
-source("./R/parsers.R")
 
+## read in URLs ----
 urls <- c(
   "https://riverbendfoodbank.org/findfood/",
   "https://foodbankheartland.org/food-resources/find-food/",
@@ -26,31 +31,11 @@ urls <- c(
   "https://experience.arcgis.com/experience/a6cae906a7964b01af4b56120f4e0670/page/Food-Pantry-Finder?views=Near-Me"
 )
 
-# test on one url
-result <- urls[1] |> scrape_one()
+# get the heartland food bank data ----
+heartland_foodbank <- heartland_full_scrape(
+  url = urls[2],
+  address_col = address
+)
 
-results <- urls |> purrr::map_df(scrape_one)
-print(results)
-
-library(httr2)
-library(rvest)
-
-raw <- httr2::request(
-  "https://foodbankheartland.org/food-resources/find-food/"
-) |>
-  httr2::req_perform()
-html <- httr2::resp_body_html(raw)
-
-html |> rvest::html_elements(".storepoint-location")
-
-raw$body[1]
-
-scripts <- html |> rvest::html_elements("script") |> rvest::html_text2()
-scripts
-
-scripts[str_detect(scripts, "storepoint")]
-scripts[str_detect(scripts, "key")]
-scripts[str_detect(scripts, "api")]
-
-
-b$close()
+## write the rectangular data to .csv
+readr::write_csv(x = heartland_foodbank, file = "./out/heartland_foodbank.csv")

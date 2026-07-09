@@ -18,5 +18,6 @@ renv::install(c(
   "purrr",
   "tibble",
   "dplyr",
-  "chromote"
+  "chromote",
+  "readr"
 ))
