@@ -242,7 +242,7 @@ fa_get_page <- function(endpoint, page_num, size = 100, benchmark = FALSE) {
   }
 
   out <- httr2::request(
-    paste0("https://feedam.org", endpoint)
+    paste0("https://feedam.org/hsds/v3/", endpoint)
   ) |>
     httr2::req_url_query(page = page_num, size = size, format = "json") |>
     httr2::req_headers("Accept" = "application/json") |>
