@@ -19,5 +19,7 @@ renv::install(c(
   "tibble",
   "dplyr",
   "chromote",
-  "readr"
+  "readr",
+  "mirai",
+  "cli"
 ))

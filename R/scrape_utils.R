@@ -4,7 +4,7 @@
 
 # HEARTLAND WEBSITE FUNCTIONS --------------------------------------------
 
-###---------------------------------------------------------------------------
+###___________________________________________________________________________----
 # Function: initial_scrape_heartland()
 #
 # Purpose:
@@ -23,7 +23,7 @@
 # Notes:
 #   - The function uses Sys.sleep() to allow sufficient JS rendering time.
 #   - Chromote sessions are not closed automatically; user handles cleanup.
-###---------------------------------------------------------------------------
+###___________________________________________________________________________----
 
 initial_scrape_heartland <- function(url) {
   # Initialize Chromote headless browser session
@@ -88,7 +88,7 @@ initial_scrape_heartland <- function(url) {
 }
 
 
-###---------------------------------------------------------------------------
+###___________________________________________________________________________----
 # Function: clean_address_components()
 #
 # Purpose:
@@ -111,7 +111,7 @@ initial_scrape_heartland <- function(url) {
 #
 # Output:
 #   Mutated tibble with full_address, addr_1, addr_2, addr_3, state, zip.
-###---------------------------------------------------------------------------
+###___________________________________________________________________________----
 
 clean_address_components <- function(df, col) {
   df |>
@@ -174,7 +174,7 @@ clean_address_components <- function(df, col) {
     dplyr::select(-description)
 }
 
-###---------------------------------------------------------------------------
+###___________________________________________________________________________----
 # Function: heartland_full_scrape()
 #
 # Purpose:
@@ -191,7 +191,7 @@ clean_address_components <- function(df, col) {
 # Notes:
 #   - Calls initial_scrape_heartland() for rendered HTML extraction.
 #   - Calls clean_address_components() for address normalization.
-###---------------------------------------------------------------------------
+###___________________________________________________________________________----
 
 heartland_full_scrape <- function(url, address_col) {
   # Run headless scrape
@@ -207,22 +207,356 @@ heartland_full_scrape <- function(url, address_col) {
 }
 
 
-# RAPIDAPI FUNCTIONALITY -------------------------------------------------
+# FEEDING AMERICA API FUNCTIONS ----------------------------------------------
 
-fa_get <- function(endpoint) {
-  httr2::request(
+###___________________________________________________________________________
+# Function: fa_get_page()
+#
+# Purpose:
+#   Retrieve a single page of results from any HSDS v3 endpoint within the
+#   Feeding America API. HSDS endpoints are fully paginated, with a default
+#   page size of 100 records. This helper performs one request, parses JSON,
+#   and returns the HSDS metadata wrapper as a tibble. Optional benchmarking
+#   reports execution time for performance diagnostics.
+#
+# Inputs:
+#   endpoint  : Character. HSDS endpoint beginning with "/hsds/v3/", such as
+#               "/hsds/v3/locations".
+#   page_num  : Integer. Page number to retrieve.
+#   size      : Integer. Page size. Default is 100.
+#   benchmark : Logical. If TRUE, the function reports execution time
+#               using cli alerts.
+#
+# Output:
+#   Tibble containing the HSDS metadata wrapper (total_items, total_pages,
+#   page_number, size, first_page, last_page, empty, contents).
+#
+# Notes:
+#   - The "contents" list-column is not tidied here. Use hsds_tidy() for that.
+#   - Benchmarking is intended for iterative parallel ingestion diagnostics.
+###___________________________________________________________________________
+
+fa_get_page <- function(endpoint, page_num, size = 100, benchmark = FALSE) {
+  if (benchmark) {
+    start_time <- Sys.time()
+  }
+
+  out <- httr2::request(
     paste0("https://feedam.org", endpoint)
   ) |>
+    httr2::req_url_query(page = page_num, size = size) |>
     httr2::req_headers("Accept" = "application/json") |>
     httr2::req_perform() |>
     httr2::resp_body_json() |>
     tibble::as_tibble()
+
+  if (benchmark) {
+    end_time <- Sys.time()
+    total_time <- difftime(end_time, start_time, units = "auto")
+    time_val <- total_time |> as.numeric() |> round(digits = 2)
+    time_units <- attr(total_time, "units")
+
+    cli::cli_alert_info(
+      "{.fn fa_get_page} ran in {col_blue(time_val)} {col_blue(time_units)}."
+    )
+  }
+
+  return(out)
 }
 
-# Examples
-# fa_orgs      <- fa_get("/hsds/v3/organizations")
-# fa_services  <- fa_get("/hsds/v3/services")
-# fa_locations <- fa_get("/hsds/v3/locations")
-# fa_addresses <- fa_get("/hsds/v3/addresses")
-# fa_phones    <- fa_get("/hsds/v3/phones")
-# fa_schedules <- fa_get("/hsds/v3/schedules")
+
+###___________________________________________________________________________
+# Function: fa_get_total_pages()
+#
+# Purpose:
+#   Retrieve the total number of pages available from any HSDS v3 endpoint.
+#   HSDS responses include pagination metadata in every page. This helper
+#   queries the first page and extracts the total_pages field.
+#
+# Inputs:
+#   endpoint  : Character. HSDS endpoint beginning with "/hsds/v3/".
+#   page_num  : Integer. Page number to inspect. Defaults to 1 since all pages
+#               include identical pagination metadata.
+#   size      : Integer. Page size. Default = 100.
+#   benchmark : Logical. When TRUE, passes benchmarking through fa_get_page().
+#
+# Output:
+#   Integer indicating total number of pages in the HSDS endpoint.
+#
+# Notes:
+#   - Used by parallel ingestion workflows and mori/mirai iteration strategies.
+#   - HSDS endpoints often contain very large datasets (hundreds of thousands
+#     of records). Knowing total_pages assists performance planning.
+###___________________________________________________________________________
+
+fa_get_total_pages <- function(
+  endpoint,
+  page_num = 1,
+  size = 100,
+  benchmark = FALSE
+) {
+  temp <- fa_get_page(
+    endpoint = endpoint,
+    page_num = page_num,
+    size = size,
+    benchmark = benchmark
+  )
+
+  out <- temp |>
+    dplyr::distinct(total_pages) |>
+    dplyr::pull(total_pages)
+
+  return(out)
+}
+
+
+###___________________________________________________________________________
+# Function: hsds_tidy()
+#
+# Purpose:
+#   Convert the nested HSDS “contents” field into a rectangular tibble. All HSDS
+#   records contain optional fields that may be NULL. Since NULL is not a valid
+#   tibble column type, this helper replaces NULL values with NA.
+#
+# Inputs:
+#   x : A tibble produced by fa_get_page(), containing a “contents” list-column
+#       where each element is a list of HSDS fields.
+#
+# Output:
+#   A rectangular tibble where each HSDS record is one row and all NULL fields
+#   are replaced with NA.
+#
+# Notes:
+#   - Required by all HSDS entity types (locations, services, addresses, phones,
+#     schedules, organizations).
+#   - HSDS is compliant with OpenReferral; this NULL→NA transformation is standard.
+###___________________________________________________________________________
+
+hsds_tidy <- function(x) {
+  x$contents |>
+    purrr::map(\(rec) {
+      rec |>
+        purrr::modify(\(val) if (is.null(val)) NA else val) |>
+        tibble::as_tibble()
+    }) |>
+    purrr::list_rbind()
+}
+
+
+###___________________________________________________________________________
+# Function: fa_get()
+#
+# Purpose:
+#   Retrieve all pages of an HSDS v3 endpoint, apply the tidying transformation
+#   to each page’s “contents” list, and return a fully rectangular dataset.
+#
+# Inputs:
+#   endpoint : Character. HSDS endpoint beginning with "/hsds/v3/", such as
+#              "/hsds/v3/locations".
+#   page_num : *Unused in this wrapper*. Present for signature clarity.
+#   size     : Integer. HSDS page size. Default is 100.
+#
+# Output:
+#   A tidy tibble containing all HSDS records from the endpoint, across all pages.
+#
+# Workflow:
+#   1. Retrieve page 1 to determine total_pages.
+#   2. Iterate over all pages (1 … total_pages).
+#   3. Apply hsds_tidy() to each page’s contents.
+#   4. Bind all tidied pages into a single tibble.
+#
+# Notes:
+#   - National ingestion may be large (hundreds of thousands of records).
+#   - For state-level work (IA), consider filtering pages during iteration.
+###___________________________________________________________________________
+
+fa_get <- function(endpoint, size = 100) {
+  # Retrieve first page to obtain pagination metadata
+  first <- fa_get_page(endpoint, 1, size)
+  total_pages <- unique(first$total_pages)
+
+  # dynamic message
+  cli_alert_info(
+    "Pulling data from {endpoint} for {total_pages} total pages."
+  )
+
+  # Iterate all pages and tidy each contents block
+  out <- mirai_map(
+    .x = 1:total_pages,
+    \(pg) {
+      dat <- helper1(endpoint, pg, size)
+      helper2(dat)
+    },
+    helper1 = fa_get_page,
+    helper2 = hsds_tidy
+  )[.progress]
+
+  return(out)
+}
+
+
+###___________________________________________________________________________
+# Function: fa_loop_ingest()
+#
+# Purpose:
+#   Sequentially retrieve all pages from a Feeding America HSDS v3 endpoint,
+#   apply HSDS tidying logic to each page, and combine the results into a single
+#   rectangular tibble. This function implements a progress bar using
+#   cli::cli_progress_along(), providing real-time reporting on page number,
+#   total pages, and percent complete. This loop serves as a baseline benchmark
+#   against parallel mirai ingestion.
+#
+# Inputs:
+#   endpoint : Character. HSDS v3 endpoint beginning with "/hsds/v3/", such as
+#              "/hsds/v3/locations", "/hsds/v3/services", etc.
+#
+#   size     : Integer. Page size. HSDS defaults to 100. Rarely adjusted.
+#
+# Output:
+#   Tibble containing all HSDS records from the endpoint, fully tidied.
+#
+# Workflow:
+#   1. Determine total page count for the endpoint via fa_get_total_pages().
+#   2. Initialize progress reporting via cli_progress_along().
+#   3. Iterate through page indices, retrieving each page with fa_get_page().
+#   4. Convert each raw page’s contents list into a tidy tibble using hsds_tidy().
+#   5. Bind all page-level tibbles together via vctrs::list_rbind().
+#
+# Notes:
+#   - This function is serial and slower than mirai ingestion; however,
+#     it is stable, predictable, and ideal for controlled benchmarking.
+#   - HSDS datasets can be very large (hundreds of thousands of records).
+#     Progress reporting meaningfully improves monitoring during long runs.
+###___________________________________________________________________________
+
+fa_loop_ingest <- function(endpoint, size = 100) {
+  # Retrieve the total number of pages for the endpoint
+  total_pages <- fa_get_total_pages(
+    endpoint = endpoint,
+    size = size,
+    benchmark = FALSE
+  )
+
+  # Informative message to user
+  cli::cli_alert_info(
+    "Feeding America HSDS Data Ingestion Loop working on {endpoint} ({total_pages} pages)."
+  )
+
+  # Preallocate results list for efficiency
+  out_list <- vector(mode = "list", length = total_pages)
+
+  # Generate the progress-aware index sequence
+  prog_seq <- cli::cli_progress_along(
+    x = 1:total_pages,
+    name = "HSDS Ingestion",
+    format = paste0(
+      "Ingesting Feeding America HSDS Data [{cli::pb_bar}] ",
+      "Page {cli::pb_current}/{cli::pb_total} ",
+      "({round(cli::pb_current/cli::pb_total*100)}%) ",
+      "| Elapsed: {cli::pb_elapsed} | ETA: {cli::pb_eta}"
+    )
+  )
+
+  # Serial ingestion loop with progress reporting
+  for (i in prog_seq) {
+    # Retrieve page i of HSDS data
+    raw_page <- fa_get_page(
+      endpoint = endpoint,
+      page_num = i,
+      size = size,
+      benchmark = FALSE
+    )
+
+    # Transform nested contents list into tidy rectangular tibble
+    out_list[[i]] <- hsds_tidy(raw_page)
+  }
+
+  # Bind all page-level tibbles into one tidy dataset
+  out <- purrr::list_rbind(out_list)
+
+  return(out)
+}
+
+
+###___________________________________________________________________________
+# Function: fa_get_parallel()
+#
+# Purpose:
+#   Execute parallel ingestion of Feeding America HSDS v3 endpoint data using
+#   mirai_map() and multiple daemons. This implementation uses
+#   cli_progress_along() to provide a progress bar that reports status, percent
+#   complete, elapsed time, and estimated remaining time. All pages are executed
+#   concurrently and then collapsed into a single rectangular tibble.
+#
+# Inputs:
+#   endpoint : Character. HSDS v3 endpoint beginning with "/hsds/v3/", such as
+#              "/hsds/v3/locations" or "/hsds/v3/addresses".
+#   size     : Integer. Page size. Default is 100.
+#
+# Output:
+#   A tibble containing all records from the HSDS endpoint, fully tidied.
+#
+# Workflow:
+#   1. Query page 1 to identify total_pages.
+#   2. Establish parallel mirai daemons.
+#   3. Construct a progress-aware sequence of page indices.
+#   4. For each page index, invoke helper1 (fa_get_page) to retrieve raw data
+#      and helper2 (hsds_tidy) to convert nested contents into a tidy tibble.
+#   5. Return a flat, combined tibble using purrr::list_rbind().
+#
+# Helper Functions Passed Explicitly:
+#   helper1 : fa_get_page() — retrieves a single HSDS page.
+#   helper2 : hsds_tidy() — tidies HSDS page contents into rectangular tibble.
+#
+# Notes:
+#   - This function is designed for large HSDS endpoints (thousands of pages).
+#   - The progress bar uses cli's internal timing estimates to report ETA.
+#   - Daemons(10) is appropriate for Windows 11 ingestion; adjust as needed.
+###___________________________________________________________________________
+
+fa_get_parallel <- function(endpoint, size = 100) {
+  # Retrieve the total number of pages for the endpoint
+  total_pages <- fa_get_total_pages(
+    endpoint = endpoint,
+    size = size,
+    benchmark = FALSE
+  )
+
+  # Header
+  cli_h1("Feeding America HSDS Data Ingestion")
+
+  # Informative message to user
+  cli::cli_alert_info(
+    "Loop working on {endpoint} ({total_pages} pages)."
+  )
+
+  # Parallel ingestion loop with progress reporting
+  out <- mirai_map(
+    .x = 1:total_pages,
+
+    \(pg) {
+      #_________________________________________________________________
+      # helper1: fa_get_page()
+      #   Retrieves one HSDS v3 page. The page contains pagination
+      #   metadata and a "contents" list-column that must be tidied.
+      #_________________________________________________________________
+      dat <- helper1(
+        endpoint = endpoint,
+        page_num = pg,
+        size = size,
+        benchmark = FALSE
+      )
+
+      #_________________________________________________________________
+      # helper2: hsds_tidy()
+      #   Converts HSDS nested lists into a rectangular tibble,
+      #   replacing NULL with NA and binding fields into columns.
+      #_________________________________________________________________
+      helper2(dat)
+    },
+    helper1 = fa_get_page,
+    helper2 = hsds_tidy
+  )[.progress]
+
+  return(out)
+}
