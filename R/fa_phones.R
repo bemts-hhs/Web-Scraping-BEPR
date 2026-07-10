@@ -7,7 +7,7 @@
 
 ## phones chunk 1 ----
 fa_phones_1 <- fa_loop_ingest(
-  endpoint = "/hsds/v3/phones",
+  endpoint = "phones",
   start = 1,
   end = 400,
   size = 100
@@ -15,7 +15,7 @@ fa_phones_1 <- fa_loop_ingest(
 
 ## phones chunk 2 ----
 fa_phones_2 <- fa_loop_ingest(
-  endpoint = "/hsds/v3/phones",
+  endpoint = "phones",
   start = 401,
   end = 800,
   size = 100
@@ -23,7 +23,7 @@ fa_phones_2 <- fa_loop_ingest(
 
 ## phones chunk 3 ----
 fa_phones_3 <- fa_loop_ingest(
-  endpoint = "/hsds/v3/phones",
+  endpoint = "phones",
   start = 801,
   end = 1200,
   size = 100
@@ -31,7 +31,7 @@ fa_phones_3 <- fa_loop_ingest(
 
 ## phones chunk 4 ----
 fa_phones_4 <- fa_loop_ingest(
-  endpoint = "/hsds/v3/phones",
+  endpoint = "phones",
   start = 1201,
   end = 1600,
   size = 100
@@ -39,7 +39,7 @@ fa_phones_4 <- fa_loop_ingest(
 
 ## phones chunk 5 ----
 fa_phones_5 <- fa_loop_ingest(
-  endpoint = "/hsds/v3/phones",
+  endpoint = "phones",
   start = 1601,
   end = 2000,
   size = 100
@@ -47,7 +47,7 @@ fa_phones_5 <- fa_loop_ingest(
 
 ## phones chunk 6 ----
 fa_phones_6 <- fa_loop_ingest(
-  endpoint = "/hsds/v3/phones",
+  endpoint = "phones",
   start = 2001,
   end = 2400,
   size = 100
@@ -55,7 +55,7 @@ fa_phones_6 <- fa_loop_ingest(
 
 ## phones chunk 7 ----
 fa_phones_7 <- fa_loop_ingest(
-  endpoint = "/hsds/v3/phones",
+  endpoint = "phones",
   start = 2401,
   end = 2800,
   size = 100
@@ -63,9 +63,9 @@ fa_phones_7 <- fa_loop_ingest(
 
 ## phones chunk 8 ----
 fa_phones_8 <- fa_loop_ingest(
-  endpoint = "/hsds/v3/phones",
+  endpoint = "phones",
   start = 2801,
-  end = fa_get_total_pages(endpoint = "/hsds/v3/phones"),
+  end = fa_get_total_pages(endpoint = "phones"),
   size = 100
 )
 
