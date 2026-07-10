@@ -228,7 +228,7 @@ heartland_full_scrape <- function(url, address_col) {
 #               using cli alerts.
 #
 # Output:
-#   Tibble containing the HSDS metadata wrapper (total_items, total_pages,
+#   Tibble containing the HSDS metadata wrapper (total_items, end,
 #   page_number, size, first_page, last_page, empty, contents).
 #
 # Notes:
@@ -244,7 +244,7 @@ fa_get_page <- function(endpoint, page_num, size = 100, benchmark = FALSE) {
   out <- httr2::request(
     paste0("https://feedam.org", endpoint)
   ) |>
-    httr2::req_url_query(page = page_num, size = size) |>
+    httr2::req_url_query(page = page_num, size = size, format = "json") |>
     httr2::req_headers("Accept" = "application/json") |>
     httr2::req_perform() |>
     httr2::resp_body_json() |>
@@ -342,59 +342,6 @@ hsds_tidy <- function(x) {
     purrr::list_rbind()
 }
 
-
-###___________________________________________________________________________
-# Function: fa_get()
-#
-# Purpose:
-#   Retrieve all pages of an HSDS v3 endpoint, apply the tidying transformation
-#   to each page’s “contents” list, and return a fully rectangular dataset.
-#
-# Inputs:
-#   endpoint : Character. HSDS endpoint beginning with "/hsds/v3/", such as
-#              "/hsds/v3/locations".
-#   page_num : *Unused in this wrapper*. Present for signature clarity.
-#   size     : Integer. HSDS page size. Default is 100.
-#
-# Output:
-#   A tidy tibble containing all HSDS records from the endpoint, across all pages.
-#
-# Workflow:
-#   1. Retrieve page 1 to determine total_pages.
-#   2. Iterate over all pages (1 … total_pages).
-#   3. Apply hsds_tidy() to each page’s contents.
-#   4. Bind all tidied pages into a single tibble.
-#
-# Notes:
-#   - National ingestion may be large (hundreds of thousands of records).
-#   - For state-level work (IA), consider filtering pages during iteration.
-###___________________________________________________________________________
-
-fa_get <- function(endpoint, size = 100) {
-  # Retrieve first page to obtain pagination metadata
-  first <- fa_get_page(endpoint, 1, size)
-  total_pages <- unique(first$total_pages)
-
-  # dynamic message
-  cli_alert_info(
-    "Pulling data from {endpoint} for {total_pages} total pages."
-  )
-
-  # Iterate all pages and tidy each contents block
-  out <- mirai_map(
-    .x = 1:total_pages,
-    \(pg) {
-      dat <- helper1(endpoint, pg, size)
-      helper2(dat)
-    },
-    helper1 = fa_get_page,
-    helper2 = hsds_tidy
-  )[.progress]
-
-  return(out)
-}
-
-
 ###___________________________________________________________________________
 # Function: fa_loop_ingest()
 #
@@ -429,28 +376,50 @@ fa_get <- function(endpoint, size = 100) {
 #     Progress reporting meaningfully improves monitoring during long runs.
 ###___________________________________________________________________________
 
-fa_loop_ingest <- function(endpoint, size = 100) {
-  # Retrieve the total number of pages for the endpoint
-  total_pages <- fa_get_total_pages(
-    endpoint = endpoint,
-    size = size,
-    benchmark = FALSE
-  )
+fa_loop_ingest <- function(
+  endpoint,
+  start = NULL,
+  end = NULL,
+  size = 100
+) {
+  # if start is NULL, start from the first index, else use start
+  if (is.null(start)) {
+    start <- 1
+  }
+
+  # if total_pages is NULL, then get all pages
+  if (is.null(end)) {
+    # Retrieve the total number of pages for the endpoint
+    end <- fa_get_total_pages(
+      endpoint = endpoint,
+      size = size,
+      benchmark = FALSE
+    )
+  }
+
+  # Header
+  cli_h1("Feeding America HSDS Data Ingestion")
 
   # Informative message to user
-  cli::cli_alert_info(
-    "Feeding America HSDS Data Ingestion Loop working on {endpoint} ({total_pages} pages)."
-  )
+  cli::cli_inform(c(
+    "i" = "Serial HSDS client initialized. Listener active on {endpoint}.\n",
+    "v" = "Beginning paginated retrieval at page {start}, ending retrieval at page {end} with {end - start + 1} pages queued.\n"
+  ))
 
   # Preallocate results list for efficiency
-  out_list <- vector(mode = "list", length = total_pages)
+  out_list <- list()
+
+  # initialize pages vector
+  pages <- start:end
 
   # Generate the progress-aware index sequence
-  prog_seq <- cli::cli_progress_along(
-    x = 1:total_pages,
+  cli::cli_progress_bar(
     name = "HSDS Ingestion",
+    total = length(pages),
     format = paste0(
-      "Ingesting Feeding America HSDS Data [{cli::pb_bar}] ",
+      "Ingesting [",
+      "{cli::pb_bar}",
+      "] ",
       "Page {cli::pb_current}/{cli::pb_total} ",
       "({round(cli::pb_current/cli::pb_total*100)}%) ",
       "| Elapsed: {cli::pb_elapsed} | ETA: {cli::pb_eta}"
@@ -458,7 +427,10 @@ fa_loop_ingest <- function(endpoint, size = 100) {
   )
 
   # Serial ingestion loop with progress reporting
-  for (i in prog_seq) {
+  for (i in pages) {
+    # update progress
+    cli::cli_progress_update()
+
     # Retrieve page i of HSDS data
     raw_page <- fa_get_page(
       endpoint = endpoint,
@@ -471,8 +443,8 @@ fa_loop_ingest <- function(endpoint, size = 100) {
     out_list[[i]] <- hsds_tidy(raw_page)
   }
 
-  # Bind all page-level tibbles into one tidy dataset
-  out <- purrr::list_rbind(out_list)
+  # return a tidy tibble of results
+  out <- out_list |> purrr::list_rbind()
 
   return(out)
 }
@@ -514,25 +486,39 @@ fa_loop_ingest <- function(endpoint, size = 100) {
 #   - Daemons(10) is appropriate for Windows 11 ingestion; adjust as needed.
 ###___________________________________________________________________________
 
-fa_get_parallel <- function(endpoint, size = 100) {
-  # Retrieve the total number of pages for the endpoint
-  total_pages <- fa_get_total_pages(
-    endpoint = endpoint,
-    size = size,
-    benchmark = FALSE
-  )
+fa_get_parallel <- function(
+  endpoint,
+  start = NULL,
+  end = NULL,
+  size = 100
+) {
+  # if start is NULL, start from the first index, else use start
+  if (is.null(start)) {
+    start <- 1
+  }
+
+  # if end is NULL, then get all pages
+  if (is.null(end)) {
+    # Retrieve the total number of pages for the endpoint
+    end <- fa_get_total_pages(
+      endpoint = endpoint,
+      size = size,
+      benchmark = FALSE
+    )
+  }
 
   # Header
   cli_h1("Feeding America HSDS Data Ingestion")
 
   # Informative message to user
-  cli::cli_alert_info(
-    "Loop working on {endpoint} ({total_pages} pages)."
-  )
+  cli::cli_inform(c(
+    "i" = "Parallel HSDS client initialized. Listener active on {endpoint}.\n",
+    "v" = "Beginning paginated retrieval at page {start}, ending retrieval at page {end} with {end - start + 1} pages queued.\n"
+  ))
 
   # Parallel ingestion loop with progress reporting
   out <- mirai_map(
-    .x = 1:total_pages,
+    .x = start:end,
 
     \(pg) {
       #_________________________________________________________________
@@ -556,7 +542,10 @@ fa_get_parallel <- function(endpoint, size = 100) {
     },
     helper1 = fa_get_page,
     helper2 = hsds_tidy
-  )[.progress]
+  )[.progress, .stop]
 
-  return(out)
+  # bind list rows to create a tidy tibble
+  out_tbl <- purrr::list_rbind(out)
+
+  return(out_tbl)
 }

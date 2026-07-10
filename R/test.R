@@ -52,21 +52,3 @@ heartland_foodbank <- heartland_full_scrape(
 
 ## write the rectangular data to .csv
 readr::write_csv(x = heartland_foodbank, file = "./out/heartland_foodbank.csv")
-
-# feed america scraping ----
-
-## addresses ----
-fa_addresses <- fa_get_parallel(endpoint = "/hsds/v3/addresses", size = 100)
-
-### union addresses
-fa_addresses_full <- fa_addresses |>
-  purrr::list_rbind() |>
-  dplyr::filter(state_province == "IA")
-
-## export addresses
-write_csv(
-  x = fa_addresses_full,
-  file = "./out/feeding_america_addresses_ia.csv"
-)
-
-##
