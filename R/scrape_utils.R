@@ -493,6 +493,9 @@ fa_get_parallel <- function(
   end = NULL,
   size = 100
 ) {
+  # get the function start time
+  start_time <- Sys.time()
+
   # if start is NULL, start from the first index, else use start
   if (is.null(start)) {
     start <- 1
@@ -547,6 +550,26 @@ fa_get_parallel <- function(
 
   # bind list rows to create a tidy tibble
   out_tbl <- purrr::list_rbind(out)
+
+  # get the function end time
+  end_time <- Sys.time()
+
+  # get raw time difference
+  runtime <- difftime(end_time, start_time, units = "auto")
+
+  # unit attribute
+  unit <- attr(runtime, which = "units")
+
+  # get rounded time without unit
+  runtime_val <- round(
+    as.numeric(runtime),
+    digits = 2
+  )
+
+  # print a dynamic message on how long the function took to run
+  cli::cli_alert_success(
+    "{.fn fa_get_parallel} ran for {cli::col_blue(runtime_val)} {unit}."
+  )
 
   return(out_tbl)
 }
