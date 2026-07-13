@@ -54,7 +54,18 @@ fa_organizations_6 <- fa_loop_ingest(
 )
 
 
-### union organizations
-fa_organizations_full <- fa_organizations |>
-  purrr::discard(is_mirai_error) |>
-  purrr::list_rbind()
+## union organizations ----
+fa_organizations_all <- dplyr::bind_rows(
+  fa_organizations_1,
+  fa_organizations_2,
+  fa_organizations_3,
+  fa_organizations_4,
+  fa_organizations_5,
+  fa_organizations_6
+)
+
+### export organizations ----
+write_csv(
+  x = fa_organizations_all,
+  file = "./out/feeding_america_organizations.csv"
+)
