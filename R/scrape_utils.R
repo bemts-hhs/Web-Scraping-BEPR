@@ -403,7 +403,7 @@ fa_loop_ingest <- function(
 
   # Informative message to user
   cli::cli_inform(c(
-    "i" = "Serial HSDS client initialized. Listener active on {endpoint}.\n",
+    "i" = "Serial HSDS client initialized. Listener active on {paste0('https://feedam.org/api/hsds/v3/', endpoint)}.\n",
     "v" = "Beginning paginated retrieval at page {start}, ending retrieval at page {end} with {end - start + 1} pages queued.\n"
   ))
 
@@ -516,7 +516,7 @@ fa_get_parallel <- function(
 
   # Informative message to user
   cli::cli_inform(c(
-    "i" = "Parallel HSDS client initialized. Listener active on {endpoint}.\n",
+    "i" = "Parallel HSDS client initialized. Listener active on {paste0('https://feedam.org/api/hsds/v3/', endpoint)}.\n",
     "v" = "Beginning paginated retrieval at page {start}, ending retrieval at page {end} with {end - start + 1} pages queued.\n"
   ))
 

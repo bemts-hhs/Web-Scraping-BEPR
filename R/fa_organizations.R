@@ -1,7 +1,11 @@
 ###___________________________________________________________________________
 # Scrape the Feeding America /organizations endpoint
 # must first run the setup.R and source scrape_utils.R
+# not using parallel processing here due to
 ###___________________________________________________________________________
+
+# utilize parallel processing ----
+daemons(5) # <- conservative approach to avoid over throttling
 
 # organizations data ----
 
@@ -53,6 +57,8 @@ fa_organizations_6 <- fa_loop_ingest(
   size = 100
 )
 
+# wind down daemons ----
+daemons(0)
 
 ## union organizations ----
 fa_organizations_all <- dplyr::bind_rows(

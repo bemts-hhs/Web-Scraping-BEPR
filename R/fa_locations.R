@@ -3,6 +3,9 @@
 # must first run the setup.R and source scrape_utils.R
 ###___________________________________________________________________________
 
+# utilize parallel processing ----
+daemons(5) # <- conservative approach to avoid over throttling
+
 # locations ----
 
 ## locations chunk 1 ----
@@ -69,6 +72,9 @@ fa_locations_8 <- fa_get_parallel(
   size = 100
 )
 
+# wind down daemons ----
+daemons(0)
+
 ## union locations ----
 fa_locations_all <- dplyr::bind_rows(
   fa_locations_1,
@@ -81,11 +87,8 @@ fa_locations_all <- dplyr::bind_rows(
   fa_locations_8
 )
 
-## get iowa locations
-fa_locations_full <- fa_locations_all |> dplyr::filter(state_province == "IA")
-
 ### export locations ----
 write_csv(
-  x = fa_locations_full,
-  file = "./out/feeding_america_locations_ia.csv"
+  x = fa_locations_all,
+  file = "./out/feeding_america_locations.csv"
 )
